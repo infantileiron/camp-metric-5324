@@ -38,3 +38,17 @@ class RunInput(BaseModel):
   if self.date_from>self.date_to:raise ValueError('开始日不得晚于结束日')
   return self
 class NoteInput(BaseModel):note:str=Field(min_length=8,max_length=2000)
+class MonitorInput(BaseModel):
+ name:str=Field(min_length=2,max_length=100)
+ metric_id:int=Field(gt=0)
+ threshold:float=Field(gt=0,le=1000000)
+ start_date:date
+ enabled:bool=True
+ @model_validator(mode='after')
+ def finite_threshold(self):
+  import math
+  if not math.isfinite(self.threshold):raise ValueError('阈值必须是有限数值')
+  if self.start_date.year<2000 or self.start_date.year>2100:raise ValueError('起始评估日超出合理范围')
+  return self
+class ConfirmInput(BaseModel):note:str=Field(default='',max_length=1000)
+

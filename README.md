@@ -6,13 +6,13 @@
 
 启航训练营经营分析组服务四个线上/线下班级，每天收到班主任的 `启航_班级日报_20261115.xlsx`。原流程由分析员在工作簿计算实到率、结课达成率、退款占比，再把数字抄入经营会纪要。痛点是分子分母的过滤范围不一致、修改公式后旧结论失去依据、数据更正与口径变化无法分清。本项目接收上游班级日事实，替代口径登记/试算/差异解释，给下游经营负责人提供冻结依据。
 
-三个业务实体：指标定义Metric（代码+版本唯一）、班级日事实Fact（班级+日期唯一）、试算签核快照Snapshot。四页是口径目录、事实校验、口径试算和签核历史；另有登录。后台worker真实计算，签核锁定口径与意见，后续事实修改不改变历史快照。
+三个业务实体：指标定义Metric（代码+版本唯一）、班级日事实Fact（班级+日期唯一）、试算签核快照Snapshot。五页是口径目录、事实校验、口径试算、签核历史和滚动监测；另有登录。后台worker真实计算，签核锁定口径与意见，后续事实修改不改变历史快照。
 
 |角色|权限|典型动作|
 |---|---|---|
 |admin|全部业务、审计、独占签核|冻结经营依据|
 |analyst|口径/事实读写、试算、业务解释、导出|建立净实到结课率v2并比较v1|
-|viewer|业务只读及导出|下载签核快照，后端拒绝写入和任务提交|
+|viewer|业务只读及导出|下载签核快照；可查看滚动监测与预警详情，后端拒绝写入、确认和任务提交|
 
 ## 快速启动
 
@@ -36,6 +36,25 @@ docker compose exec -T backend python -m scripts.seed_demo
 7. 10:00 在签核历史填写不少于8字的解释，说明是否同时存在事实变化。
 8. 10:10 admin签核；该版本不可覆盖。10:20 viewer下载 `camp-metric-<id>.json`。
 
+## 滚动监测（结课率持续下滑）
+
+手动试算只看一个日期窗，容易漏掉“结课率持续下滑”。滚动监测把口径版本和阈值绑定成配置（MonitorConfig），按**上海日期**每天评估一次：取该评估日及之前共七个自然日的事实，按口径分别过滤分子/分母的授课方式，逐行执行白名单表达式后分别求和，再求“分子合计 / 分母合计”；不是七个日比率的简单平均。页面输入的是百分比阈值（例如 70），比较时也用百分比。
+
+|规则|行为|
+|---|---|
+|连续低于|连续 **3 个已评日** 低于阈值形成**一次**预警；同一连续段只开一条，重试不重复开警|
+|恢复|连续段之后首个已评日不低于阈值，预警结束（recovered）并记录恢复日|
+|零分母|比值记为未知（unknown），**不补零**，并打断连续段；已形成的预警在未知日后仍保持活动，恢复才结束|
+|冻结依据|每次评估保存口径版本、阈值、日期窗、全部窗口事实及 checksum；预警另存形成时与确认时两份依据|
+|停机补齐|worker 启动及每 30 秒（`MONITOR_SWEEP_SECONDS`）扫描，补齐起始日至今所有应评估日；保存事实时入队只是加速，入队失败也不影响已保存事实|
+|重试幂等|输入（口径/阈值/窗口事实）未变时不重算、不新增事件、不加版本号|
+|迟报更正|重算受影响日期并重建连续段；预警沿用原记录，撤销后保留确认人与旧依据|
+|并发|评估按 (监测, 日期) 唯一；预警取行锁，确认/补评/更正不覆盖彼此结果|
+|状态|评估：below / ok / unknown / error；预警：open（待确认）/ confirmed / recovered / revoked（撤销）|
+|历史|MonitorEvent 记录 formed / confirmed / recovered / revoked / reopened / recalculated，含重算前后依据摘要，始终可查|
+
+页面“滚动监测”可配置与修订监测、查看应评/已评/待评数量与逐日评估、查看每日冻结依据、确认待确认预警、查看预警详情（含撤销保留的旧依据与事件）。原口径试算与签核流程不变。
+
 ## 指标计算与安全白名单
 
 允许字段为 enrolled/attended/completed/refunds，分别是班级日的报名/实到/结课/退款人次。表达式仅允许数字、字段、括号、+ − * /和一元正负；AST逐节点解释，禁止函数、属性访问、下标、幂运算、布尔、SQL和任意代码执行。表达式最多200字符/60个AST节点，常量绝对值≤1000000；非有限值、行级除零、极小分母造成超限结果显式失败。
@@ -57,8 +76,8 @@ docker compose exec -T backend python -m scripts.seed_demo
 
 backend等待db/redis健康，worker再等backend，frontend等backend；恰好五服务。数据库、Redis及共享`/artifacts`结果卷持久化。Nginx `/api/`代理到后端根路由。清理用 `docker compose down -v --remove-orphans`。显式网络10.253.111.0/24规避当前机器默认地址池耗尽，可用NETWORK_SUBNET改。
 
-环境变量见.env.example：COMPOSE_PROJECT_NAME、FRONTEND_PORT、BACKEND_PORT、DB_PORT、DB_PASSWORD、JWT_SECRET、SEED_DEMO、NETWORK_SUBNET。演示凭据/密钥部署时替换。本地开发先起db/redis，backend安装requirements，设置DATABASE_URL/REDIS_URL/JWT_SECRET后 `uvicorn src.main:app --reload`；前端保留同源Nginx或开发代理。
+环境变量见.env.example：COMPOSE_PROJECT_NAME、FRONTEND_PORT、BACKEND_PORT、DB_PORT、DB_PASSWORD、JWT_SECRET、SEED_DEMO、MONITOR_SWEEP_SECONDS、NETWORK_SUBNET。演示凭据/密钥部署时替换。本地开发先起db/redis，backend安装requirements，设置DATABASE_URL/REDIS_URL/JWT_SECRET后 `uvicorn src.main:app --reload`；前端保留同源Nginx或开发代理。
 
 目录按backend/src的routes/controllers/services/models/schemas/middlewares/config/utils及frontend/src的api/stores/pages/components/hooks/utils/constants/types/router拆分。共享表格、字段、状态标签；表单hooks与HTML转义；请求ID/安全头中间件、业务审计和全局错误处理。枚举ROLES/STATES/MODES/APPROVALS/FIELDS位于后端constants/enums.py、schemas/business.py和前端constants/enums.js。ORM建初表，migrations/001_initial.sql保留实际DDL；无在线版本迁移执行器。
 
-小型范围：逐条表单/API录入，无Excel批导、删除、分页或跨指标引用；单worker，启动恢复待处理任务。班级日事实是人次，不能解释为去重学员留存。签核只在站内，不外发邮件/电子签章。Google Fonts依赖网络，离线回退serif/sans-serif。测试证据在 `../../test-artifacts/gb-3111/TESTING.md`，源码无截图/日志。MIT License见LICENSE。
+小型范围：逐条表单/API录入，无Excel批导、删除、分页或跨指标引用；单worker，启动恢复待处理任务并按上海日期扫滚动监测。班级日事实是人次，不能解释为去重学员留存。签核只在站内，不外发邮件/电子签章。Google Fonts依赖网络，离线回退serif/sans-serif。测试证据在 `../../test-artifacts/gb-3111/TESTING.md`，源码无截图/日志。MIT License见LICENSE。

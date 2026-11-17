@@ -15,3 +15,16 @@ class Snapshot(Base):
 class Audit(Base):
  __tablename__='audits'
  id=Column(Integer,primary_key=True);actor=Column(String(100));action=Column(String(200));created=Column(String(40))
+class MonitorConfig(Base):
+ __tablename__='monitor_configs'
+ id=Column(Integer,primary_key=True);name=Column(String(100));metric_id=Column(Integer,ForeignKey('metrics.id'),nullable=False);threshold=Column(Float,nullable=False);start_date=Column(String(10),nullable=False);enabled=Column(Boolean,default=True,nullable=False);created_by=Column(String(100),default='');created=Column(String(40));updated_by=Column(String(100),default='');updated=Column(String(40))
+class MonitorEvaluation(Base):
+ __tablename__='monitor_evaluations';__table_args__=(UniqueConstraint('monitor_id','eval_date'),)
+ id=Column(Integer,primary_key=True);monitor_id=Column(Integer,ForeignKey('monitor_configs.id'),nullable=False);eval_date=Column(String(10),nullable=False);status=Column(String(20),nullable=False);value=Column(Float,nullable=True);numerator=Column(Float,nullable=True);denominator=Column(Float,nullable=True);threshold=Column(Float,nullable=False);consecutive_below=Column(Integer,default=0);revision=Column(Integer,default=0);input_checksum=Column(String(64),nullable=False);evidence=Column(JSON,nullable=True);error=Column(Text,default='');calculated=Column(String(40))
+class MonitorAlert(Base):
+ __tablename__='monitor_alerts'
+ id=Column(Integer,primary_key=True);monitor_id=Column(Integer,ForeignKey('monitor_configs.id'),nullable=False);metric_id=Column(Integer,ForeignKey('metrics.id'),nullable=False);anchor_date=Column(String(10),nullable=False);trigger_date=Column(String(10),nullable=False);start_date=Column(String(10));end_date=Column(String(10),nullable=True);status=Column(String(20),nullable=False);threshold=Column(Float,nullable=False);evidence=Column(JSON,nullable=True);confirmed_by=Column(String(100),default='');confirmed_at=Column(String(40),default='');confirmed_evidence=Column(JSON,nullable=True);revoked=Column(String(40),default='');revoke_reason=Column(Text,default='');created=Column(String(40));updated=Column(String(40))
+class MonitorEvent(Base):
+ __tablename__='monitor_events'
+ id=Column(Integer,primary_key=True);monitor_id=Column(Integer,ForeignKey('monitor_configs.id'),nullable=False);alert_id=Column(Integer,ForeignKey('monitor_alerts.id'),nullable=True);action=Column(String(30),nullable=False);actor=Column(String(100));detail=Column(JSON,nullable=True);created=Column(String(40))
+

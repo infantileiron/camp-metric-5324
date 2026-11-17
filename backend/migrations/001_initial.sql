@@ -316,6 +316,141 @@ ALTER TABLE ONLY public.snapshots
 
 
 --
+-- Name: monitor_configs / monitor_evaluations / monitor_alerts / monitor_events; Type: TABLE
+-- 滚动监测：配置绑定口径版本与阈值；逐日评估冻结依据；预警与事件保留历史
+--
+
+CREATE TABLE public.monitor_configs (
+    id integer NOT NULL,
+    name character varying(100),
+    metric_id integer NOT NULL,
+    threshold double precision NOT NULL,
+    start_date character varying(10) NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_by character varying(100) DEFAULT ''::character varying,
+    created character varying(40),
+    updated_by character varying(100) DEFAULT ''::character varying,
+    updated character varying(40)
+);
+
+CREATE SEQUENCE public.monitor_configs_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.monitor_configs_id_seq OWNED BY public.monitor_configs.id;
+
+CREATE TABLE public.monitor_evaluations (
+    id integer NOT NULL,
+    monitor_id integer NOT NULL,
+    eval_date character varying(10) NOT NULL,
+    status character varying(20) NOT NULL,
+    value double precision,
+    numerator double precision,
+    denominator double precision,
+    threshold double precision NOT NULL,
+    consecutive_below integer,
+    revision integer,
+    input_checksum character varying(64) NOT NULL,
+    evidence json,
+    error text DEFAULT ''::text,
+    calculated character varying(40)
+);
+
+CREATE SEQUENCE public.monitor_evaluations_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.monitor_evaluations_id_seq OWNED BY public.monitor_evaluations.id;
+
+CREATE TABLE public.monitor_alerts (
+    id integer NOT NULL,
+    monitor_id integer NOT NULL,
+    metric_id integer NOT NULL,
+    anchor_date character varying(10) NOT NULL,
+    trigger_date character varying(10) NOT NULL,
+    start_date character varying(10),
+    end_date character varying(10),
+    status character varying(20) NOT NULL,
+    threshold double precision NOT NULL,
+    evidence json,
+    confirmed_by character varying(100) DEFAULT ''::character varying,
+    confirmed_at character varying(40) DEFAULT ''::character varying,
+    confirmed_evidence json,
+    revoked character varying(40) DEFAULT ''::character varying,
+    revoke_reason text DEFAULT ''::text,
+    created character varying(40),
+    updated character varying(40)
+);
+
+CREATE SEQUENCE public.monitor_alerts_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.monitor_alerts_id_seq OWNED BY public.monitor_alerts.id;
+
+CREATE TABLE public.monitor_events (
+    id integer NOT NULL,
+    monitor_id integer NOT NULL,
+    alert_id integer,
+    action character varying(30) NOT NULL,
+    actor character varying(100),
+    detail json,
+    created character varying(40)
+);
+
+CREATE SEQUENCE public.monitor_events_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.monitor_events_id_seq OWNED BY public.monitor_events.id;
+
+ALTER TABLE ONLY public.monitor_configs ALTER COLUMN id SET DEFAULT nextval('public.monitor_configs_id_seq'::regclass);
+ALTER TABLE ONLY public.monitor_evaluations ALTER COLUMN id SET DEFAULT nextval('public.monitor_evaluations_id_seq'::regclass);
+ALTER TABLE ONLY public.monitor_alerts ALTER COLUMN id SET DEFAULT nextval('public.monitor_alerts_id_seq'::regclass);
+ALTER TABLE ONLY public.monitor_events ALTER COLUMN id SET DEFAULT nextval('public.monitor_events_id_seq'::regclass);
+
+ALTER TABLE ONLY public.monitor_configs
+    ADD CONSTRAINT monitor_configs_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.monitor_evaluations
+    ADD CONSTRAINT monitor_evaluations_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.monitor_evaluations
+    ADD CONSTRAINT monitor_evaluations_monitor_id_eval_date_key UNIQUE (monitor_id, eval_date);
+ALTER TABLE ONLY public.monitor_alerts
+    ADD CONSTRAINT monitor_alerts_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.monitor_events
+    ADD CONSTRAINT monitor_events_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.monitor_configs
+    ADD CONSTRAINT monitor_configs_metric_id_fkey FOREIGN KEY (metric_id) REFERENCES public.metrics(id);
+ALTER TABLE ONLY public.monitor_evaluations
+    ADD CONSTRAINT monitor_evaluations_monitor_id_fkey FOREIGN KEY (monitor_id) REFERENCES public.monitor_configs(id);
+ALTER TABLE ONLY public.monitor_alerts
+    ADD CONSTRAINT monitor_alerts_monitor_id_fkey FOREIGN KEY (monitor_id) REFERENCES public.monitor_configs(id);
+ALTER TABLE ONLY public.monitor_alerts
+    ADD CONSTRAINT monitor_alerts_metric_id_fkey FOREIGN KEY (metric_id) REFERENCES public.metrics(id);
+ALTER TABLE ONLY public.monitor_events
+    ADD CONSTRAINT monitor_events_monitor_id_fkey FOREIGN KEY (monitor_id) REFERENCES public.monitor_configs(id);
+ALTER TABLE ONLY public.monitor_events
+    ADD CONSTRAINT monitor_events_alert_id_fkey FOREIGN KEY (alert_id) REFERENCES public.monitor_alerts(id);
+
+
+--
 -- PostgreSQL database dump complete
 --
 
